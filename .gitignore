@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+instance/
+*.db
+*.sqlite3
+.env
+.flaskenv
+# Add other OS-specific or IDE files if needed
+.DS_Store
+*.swp
+# Add any downloaded logs or build artifacts if needed
+# *.log

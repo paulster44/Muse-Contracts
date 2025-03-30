@@ -1,0 +1,96 @@
+{% extends "base.html" %} {# Make sure it extends your base template #}
+
+{% block title %}Dashboard - Your Contracts{% endblock %} {# Set a specific title #}
+
+{% block content %}
+  {# Page Header Row #}
+  <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+    <h2 class="mb-0">Your Contracts Dashboard</h2>
+    <a href="{{ url_for('new_contract') }}" class="btn btn-success">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle-fill me-1" viewBox="0 0 16 16">
+        <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8.5 4.5a.5.5 0 0 0-1 0v3h-3a.5.5 0 0 0 0 1h3v3a.5.5 0 0 0 1 0v-3h3a.5.5 0 0 0 0-1h-3z"/>
+      </svg>
+      Create New Contract
+    </a>
+  </div>
+
+  {# Check if there are any contracts to display #}
+  {% if contracts %}
+    <div class="table-responsive shadow-sm rounded"> {# Add responsiveness and slight styling #}
+      <table class="table table-striped table-hover align-middle mb-0"> {# Add vertical alignment #}
+        <thead class="table-dark"> {# Dark header for contrast #}
+          <tr>
+            <th scope="col">Engagement Date</th>
+            <th scope="col">Leader/Band</th>
+            <th scope="col">Venue</th>
+            <th scope="col">Status</th>
+            <th scope="col">Last Saved</th>
+            <th scope="col" class="text-end">Actions</th> {# Align actions right #}
+          </tr>
+        </thead>
+        <tbody>
+          {# Loop through each contract passed from the Flask route #}
+          {% for contract in contracts %}
+            <tr>
+              {# Display contract data, providing fallbacks if data is missing #}
+              <td>{{ contract.engagement_date.strftime('%Y-%m-%d') if contract.engagement_date else 'N/A' }}</td>
+              <td>{{ contract.leader_name or contract.band_name or 'N/A' }}</td> {# This was line 60 - ensure it's clean #}
+              <td>{{ contract.venue_name or 'N/A' }}</td>
+              <td>
+                  {# Use different Bootstrap badge colors based on status #}
+                  {% if contract.status == 'draft' %}
+                      <span class="badge bg-warning text-dark">{{ contract.status|capitalize }}</span>
+                  {% elif contract.status == 'completed' %}
+                      <span class="badge bg-primary">{{ contract.status|capitalize }}</span>
+                  {% else %}
+                      <span class="badge bg-secondary">{{ contract.status|capitalize }}</span>
+                  {% endif %}
+              </td>
+              <td>{{ contract.last_saved_at.strftime('%Y-%m-%d %H:%M') if contract.last_saved_at else 'N/A' }} UTC</td>
+              <td class="text-end"> {# Align actions right #}
+
+                {# --- View Button (Always show) --- #}
+                <a href="{{ url_for('view_contract', contract_id=contract.id) }}" class="btn btn-sm btn-outline-info me-1" title="View Details">
+                    View
+                </a>
+
+                {# --- Edit / Reopen / Finalize Buttons (Conditional on status) --- #}
+                {% if contract.status == 'draft' %}
+                    {# Show standard Edit button for drafts #}
+                    <a href="{{ url_for('create_contract_step', contract_id=contract.id, step_num=1) }}" class="btn btn-sm btn-outline-warning me-1" title="Edit Draft">
+                        Edit
+                    </a>
+                    {# Show Finalize button form for drafts #}
+                    <form action="{{ url_for('finalize_contract', contract_id=contract.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to finalize this contract? Calculations will be performed based on current data.');">
+                         <button type="submit" class="btn btn-sm btn-outline-success me-1" title="Finalize Contract">
+                             Finalize
+                         </button>
+                    </form>
+                {% elif contract.status == 'completed' %}
+                    {# Show Reopen Edit button for completed contracts (uses POST) #}
+                    <form action="{{ url_for('reopen_contract', contract_id=contract.id) }}" method="POST" style="display: inline;">
+                         <button type="submit" class="btn btn-sm btn-outline-secondary me-1" title="Reopen completed contract for editing">
+                             Reopen Edit
+                         </button>
+                    </form>
+                {% endif %}
+
+                {# --- Delete Button (Always show - Use a form for POST and add JS confirmation) --- #}
+                <form action="{{ url_for('delete_contract', contract_id=contract.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to permanently delete this contract? This action cannot be undone.');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Contract">
+                        Delete
+                    </button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %} {# End of loop through contracts #}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    {# Message shown if the user has no contracts #}
+    <div class="alert alert-secondary text-center" role="alert">
+      You haven't created any contracts yet. Click 'Create New Contract' above to get started!
+    </div>
+  {% endif %} {# End of check for contracts #}
+{% endblock %} {# End of content block #}

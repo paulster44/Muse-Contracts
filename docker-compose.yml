@@ -1,0 +1,39 @@
+# docker-compose.yml
+
+services: # Defines the containers for your application
+  web: # The name of your Flask application service
+    build: . # Tells Compose to build an image using the Dockerfile in the current directory (.)
+    ports:
+      # Maps port 5001 on your host machine to port 5000 inside the container
+      # Use 5001 on the host because 5000 might be used by macOS AirPlay/ControlCenter
+      # Flask inside the container still runs on the default 5000
+      - "5001:5000"
+    volumes:
+      # 1. Mounts your local project code into /app inside the container.
+      #    This allows changes you make locally to be reflected inside the container
+      #    instantly when using Flask's debug mode (hot-reloading).
+      #    Comment this out for production builds where code doesn't change.
+      - .:/app
+      # 2. Creates/uses a named Docker volume called 'db_data' and mounts it
+      #    to /app/instance inside the container. This is where the SQLite
+      #    database file (app.db) will live, ensuring data persists even if
+      #    the container is stopped and removed.
+      - db_data:/app/instance
+    environment:
+      # Sets environment variables inside the container
+      - FLASK_APP=app.py # Tells Flask which file to run
+      - FLASK_DEBUG=1 # Enables Flask's debug mode (reloader, debugger pages) - Set to 0 for production!
+      # Tells SQLAlchemy where to find the database file *inside the container*,
+      # pointing to the path where the 'db_data' volume is mounted.
+      - SQLALCHEMY_DATABASE_URI=sqlite:////app/instance/app.db
+      # Reads the SECRET_KEY value from the .env file located in the same
+      # directory as this docker-compose.yml file on your host machine.
+      - SECRET_KEY=${SECRET_KEY}
+    # Optional: If you add another service (like a separate database container named 'db'),
+    # this ensures 'web' starts after 'db' is ready.
+    # depends_on:
+    #   - db
+
+# Defines named volumes used by the services.
+volumes:
+  db_data: # Creates a persistent volume named 'db_data' managed by Docker

@@ -12,7 +12,7 @@
     </a>
   </div>
 
-  {# Action Buttons Row Removed from View Page - Moved to Dashboard #}
+  {# Removed the Action Buttons Row from View Page - Moved to Dashboard #}
   <hr> {# Add a separator after the header #}
 
 
@@ -39,10 +39,8 @@
                <dt class="col-sm-4 col-lg-3">Type:</dt>
                <dd class="col-sm-8 col-lg-9">{{ contract.engagement_type or 'Not Set' }}</dd>
 
-               {# --- ADDED Scale Display --- #}
                <dt class="col-sm-4 col-lg-3">Applicable Scale:</dt>
                <dd class="col-sm-8 col-lg-9">{{ contract.applicable_local or 'N/A' }} / {{ contract.applicable_scale or 'N/A' }}</dd>
-               {# --- END ADDED Scale Display --- #}
 
                <dt class="col-sm-4 col-lg-3">Pre-Heat Hours:</dt>
                <dd class="col-sm-8 col-lg-9">{{ contract.pre_heat_hours if contract.pre_heat_hours is not none else 'N/A' }}</dd>
@@ -146,20 +144,18 @@
                 <dt class="col-sm-4 col-lg-3">Total Health (HBP):</dt>
                 <dd class="col-sm-8 col-lg-9">${{ "%.2f"|format(contract.total_health or 0.00) }} {% if contract.status == 'draft' %}<span class="text-muted">(Estimate)</span>{% endif %}</dd>
             </dl>
-            <p class="text-muted mt-3 mb-0">Note: Calculations based on {{ contract.applicable_local }}/{{ contract.applicable_scale }} scale. Final amounts depend on actual scale, overtime, etc.</p> {# Dynamic Note #}
+            <p class="text-muted mt-3 mb-0">Note: Calculations based on {{ contract.applicable_local or 'Default' }}/{{ contract.applicable_scale or 'Default' }} scale. Final amounts depend on actual scale, overtime, etc.</p> {# Dynamic Note #}
        </div>
    </div>
 
-   {# PDF Generation Button Commented Out using raw tags #}
-   <!--
+   {# --- PDF GENERATION BUTTON - UNCOMMENTED --- #}
    <div class="mt-4 d-flex justify-content-end">
-       {% raw %} {# PREVENT JINJA FROM PROCESSING url_for WHEN COMMENTED OUT #}
-       <a href="{{ url_for('download_contract_pdf', contract_id=contract.id) }}" class="btn btn-info" target="_blank" title="Download as PDF">
+       {# Removed HTML comment tags and Jinja raw tags #}
+       <a href="{{ url_for('download_contract_pdf', contract_id=contract.id) }}" class="btn btn-info" target="_blank" title="Generate PDF">
            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-printer-fill me-1" viewBox="0 0 16 16"><path d="M5 1a2 2 0 0 0-2 2v1h10V3a2 2 0 0 0-2-2zm6 8H5a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1"/><path d="M0 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-1v-2a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2H2a2 2 0 0 1-2-2zm2.5 1a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1"/></svg>
            Generate PDF
        </a>
-       {% endraw %} {# END RAW BLOCK #}
    </div>
-   -->
+   {# --- END PDF BUTTON SECTION --- #}
 
 {% endblock %} {# End of content block #}

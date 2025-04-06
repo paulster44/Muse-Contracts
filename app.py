@@ -3,19 +3,20 @@ import os
 import datetime
 import logging
 import math
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response # Added make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
-# --- WeasyPrint imports are COMMENTED OUT for local running ---
-# from flask_weasyprint import HTML, render_pdf
-# from flask import make_response
-# --- END COMMENT OUT ---
+from flask_weasyprint import HTML # <<< PDF import UNCOMMENTED
 from models import db, User, Contract, SideMusician # Ensure models.py is correct
 from sqlalchemy.exc import IntegrityError
+# --- WTForms Imports ---
+from flask_wtf import FlaskForm
+from wtforms import StringField, DateField, TimeField, FloatField, SelectField, SubmitField, IntegerField, BooleanField
+from wtforms.validators import DataRequired, Length, Optional, NumberRange, ValidationError # Added ValidationError
 
-# Load environment variables from .env file (primarily for SECRET_KEY)
+# Load environment variables from .env file
 load_dotenv()
 
 # Create Flask app instance
@@ -23,8 +24,7 @@ app = Flask(__name__, instance_relative_config=True)
 
 # --- Load Configuration ---
 try:
-    # Load defaults from config.py in the application root
-    app.config.from_object('config')
+    app.config.from_object('config') # Load defaults from config.py
 except ImportError:
     app.logger.error("FATAL: config.py not found. Cannot start.")
     exit() # Exit if main config is missing
@@ -32,7 +32,7 @@ except Exception as e:
      app.logger.error(f"FATAL: Error loading config.py: {e}")
      exit()
 
-# Ensure the instance folder exists (needed for SQLite)
+# Ensure the instance folder exists
 try:
     if not os.path.exists(app.instance_path): os.makedirs(app.instance_path)
 except OSError: app.logger.error("Could not create instance folder! Check permissions.")
@@ -49,6 +49,39 @@ try:
     db.init_app(app); bcrypt = Bcrypt(app); login_manager = LoginManager(app)
 except Exception as e: app.logger.critical(f"Failed init extensions: {e}", exc_info=True)
 login_manager.login_view = 'login'; login_manager.login_message_category = 'info'
+
+# --- FORMS ---
+class ContractStep1Form(FlaskForm):
+    engagement_date = DateField('Engagement Date', validators=[DataRequired()])
+    start_time = TimeField('Start Time', validators=[DataRequired()], format='%H:%M')
+    end_time = TimeField('End Time', validators=[DataRequired()], format='%H:%M')
+    leader_name = StringField('Leader/Employer Name', validators=[DataRequired(), Length(max=150)])
+    leader_card_no = StringField('Leader AFM Card No.', validators=[Optional(), Length(max=50)])
+    leader_address = StringField('Leader/Employer Address', validators=[DataRequired(), Length(max=250)])
+    leader_phone = StringField('Leader/Employer Phone', validators=[DataRequired(), Length(max=30)])
+    leader_ssn_ein = StringField('Leader SSN or EIN', validators=[Optional(), Length(max=50)])
+    band_name = StringField('Name of Band/Group', validators=[Optional(), Length(max=150)])
+    venue_name = StringField('Place of Engagement (Venue/Room)', validators=[DataRequired(), Length(max=200)])
+    location_borough = SelectField('Location (Borough/Area)', choices=[('', '-- Choose --'),('NYC', 'NYC (Manhattan)'), ('BKLYN', 'Brooklyn'), ('QNS', 'Queens'), ('BX', 'Bronx'), ('SI', 'Staten Island'), ('NAS_SUF', 'Nassau/Suffolk'), ('OOT', 'Out of Town')], validators=[DataRequired(message="Please select a location.")])
+    engagement_type = StringField('Type of Engagement', validators=[DataRequired(), Length(max=200)], render_kw={"placeholder": "e.g., Wedding, Concert"})
+    pre_heat_hours = FloatField('Pre-Heat Hours', validators=[Optional(), NumberRange(min=0, message="Hours must be non-negative.")])
+    save_draft = SubmitField('Save Draft & Exit')
+    submit_next = SubmitField('Save and Continue »')
+
+class ContractStep2Form(FlaskForm):
+    num_musicians = IntegerField('Total Number of Musicians (incl. Leader)', validators=[DataRequired(), NumberRange(min=1)], default=1)
+    actual_hours_engagement = FloatField('Actual Paid Hours of Engagement', validators=[DataRequired(message="Engagement hours required."), NumberRange(min=0.1)])
+    has_rehearsal = BooleanField('Is there a Rehearsal?')
+    actual_hours_rehearsal = FloatField('Actual Paid Hours of Rehearsal', validators=[Optional(), NumberRange(min=0.1)])
+    is_recorded = BooleanField('Will performance be Recorded/Reproduced/Transmitted?')
+    leader_is_incorporated = BooleanField('Is the Leader/Employer signing as an incorporated entity?')
+    save_draft = SubmitField('Save Draft & Exit')
+    submit_view = SubmitField('Save Step 2 & View »')
+    def validate_actual_hours_rehearsal(form, field):
+        if form.has_rehearsal.data and (field.data is None or field.data <= 0):
+            raise ValidationError('Rehearsal hours required & positive if checked.')
+# --- END FORMS ---
+
 
 # --- User Loader ---
 @login_manager.user_loader
@@ -74,58 +107,35 @@ def parse_float_safe(float_str):
     if float_str is None or str(float_str).strip() == '': return None
     try: return float(float_str)
     except (ValueError, TypeError): app.logger.warning(f"Failed parse float: {float_str}"); return None
-
-# --- Helpers using Config ---
-def is_principal(instrument_string, scale_config): # Takes scale_config dict
-    """Checks if any principal instrument is mentioned (case-insensitive)."""
+def is_principal(instrument_string, scale_config):
     if not instrument_string or not scale_config: return False
     principal_list = scale_config.get('PRINCIPAL_INSTRUMENTS', [])
-    if not principal_list: app.logger.warning("PRINCIPAL_INSTRUMENTS list empty in scale config."); return False
+    if not principal_list: app.logger.warning("PRINCIPAL_INSTRUMENTS list empty."); return False
     return any(p.lower() in instrument_string.lower() for p in principal_list)
-
-def get_cartage_fee(instrument_string, has_cartage_flag, scale_config): # Takes scale_config dict
-    """Determines cartage fee based on instrument and flag using scale_config."""
+def get_cartage_fee(instrument_string, has_cartage_flag, scale_config):
     if not has_cartage_flag or not instrument_string or not scale_config: return 0.0
     inst_lower = instrument_string.lower()
-    # Get lists and rates from the specific scale config passed in
-    sb_list = scale_config.get('CARTAGE_INSTRUMENTS_SB', [])
-    std_list = scale_config.get('CARTAGE_INSTRUMENTS_STD', [])
-    sb_rate = scale_config.get('SCALE_CARTAGE_STRING_BASS', 0.0)
-    std_rate = scale_config.get('SCALE_CARTAGE_CELLO_BASS_ETC', 0.0)
-
-    if any(sb.lower() in inst_lower for sb in sb_list): return sb_rate
-    if any(std.lower() in inst_lower for std in std_list): return std_rate
+    sb_list = scale_config.get('CARTAGE_INSTRUMENTS_SB', []); std_list = scale_config.get('CARTAGE_INSTRUMENTS_STD', [])
+    if any(sb.lower() in inst_lower for sb in sb_list): return app.config.get('SCALE_CARTAGE_STRING_BASS', 0.0)
+    if any(std.lower() in inst_lower for std in std_list): return app.config.get('SCALE_CARTAGE_CELLO_BASS_ETC', 0.0)
     return 0.0
 
-# --- Calculation Helper Function (Uses app.config & contract type) ---
+# --- Calculation Helper Function ---
 def calculate_contract_totals(contract):
-    """ Calculates totals based on contract's scale, updates object (no commit), returns object. """
+    # (Calculation logic remains the same as last version)
     app.logger.debug(f"Calculating totals: Contract ID {contract.id}, Local: {contract.applicable_local}, Scale: {contract.applicable_scale}")
     try:
-        # --- Get the specific scale config dictionary ---
         scale_config = app.config.get('SCALES', {}).get(contract.applicable_local, {}).get(contract.applicable_scale)
-        if not scale_config:
-            app.logger.error(f"Scale config not found for {contract.applicable_local} / {contract.applicable_scale}")
-            raise ValueError("Scale configuration missing for this contract.") # Raise error
-
-        # Get rates from the loaded scale_config, provide defaults if missing
-        base_perf_rate = scale_config.get('PERFORMANCE_BASE', 0.0)
-        base_reh_rate = scale_config.get('REHEARSAL_MIN_CALL', 0.0) # Using min call for simplicity
-        principal_perf_mult = scale_config.get('PERFORMANCE_PRINCIPAL_PREMIUM', 1.0)
-        principal_reh_mult = scale_config.get('REHEARSAL_PRINCIPAL_PREMIUM', 1.0)
-        perf_ot_unit_mins = scale_config.get('PERF_OT_UNIT_MINS', 15)
-        perf_ot_rate = scale_config.get('PERF_OT_RATE', 0.0)
-        perf_ot_principal_rate = scale_config.get('PERF_OT_PRINCIPAL_RATE', 0.0)
-        reh_ot_unit_mins = scale_config.get('REH_OT_UNIT_MINS', 30)
-        reh_ot_rate = scale_config.get('REH_OT_RATE', 0.0)
-        reh_ot_principal_rate = scale_config.get('REH_OT_PRINCIPAL_RATE', 0.0)
-        doubling_premium = scale_config.get('DOUBLING_FIRST_PREMIUM', 0.0)
-        pension_rate = scale_config.get('PENSION_RATE', 0.0)
-        health_perf_rate = scale_config.get('HEALTH_PER_PERFORMANCE', 0.0)
-        health_reh_rate = scale_config.get('HEALTH_PER_REHEARSAL', 0.0)
+        if not scale_config: raise ValueError("Scale configuration missing for this contract.")
+        base_perf_rate = scale_config.get('PERFORMANCE_BASE', 0.0); base_reh_rate = scale_config.get('REHEARSAL_MIN_CALL', 0.0)
+        principal_perf_mult = scale_config.get('PERFORMANCE_PRINCIPAL_PREMIUM', 1.0); principal_reh_mult = scale_config.get('REHEARSAL_PRINCIPAL_PREMIUM', 1.0)
+        perf_ot_unit_mins = scale_config.get('PERF_OT_UNIT_MINS', 15); perf_ot_rate = scale_config.get('PERF_OT_RATE', 0.0)
+        perf_ot_principal_rate = scale_config.get('PERF_OT_PRINCIPAL_RATE', 0.0); reh_ot_unit_mins = scale_config.get('REH_OT_UNIT_MINS', 30)
+        reh_ot_rate = scale_config.get('REH_OT_RATE', 0.0); reh_ot_principal_rate = scale_config.get('REH_OT_PRINCIPAL_RATE', 0.0)
+        doubling_premium = scale_config.get('DOUBLING_FIRST_PREMIUM', 0.0); pension_rate = scale_config.get('PENSION_RATE', 0.0)
+        health_perf_rate = scale_config.get('HEALTH_PER_PERFORMANCE', 0.0); health_reh_rate = scale_config.get('HEALTH_PER_REHEARSAL', 0.0)
         work_dues_rate = scale_config.get('WORK_DUES_RATE', 0.0)
-        # Ensure base rate is usable
-        if base_perf_rate <= 0: raise ValueError("Base performance rate is not positive in loaded scale config.")
+        if base_perf_rate <= 0: raise ValueError("Base performance rate not positive.")
 
         perf_hours = contract.actual_hours_engagement or 0; reh_hours = contract.actual_hours_rehearsal or 0
         has_perf = perf_hours > 0; has_reh = contract.has_rehearsal and reh_hours > 0
@@ -133,10 +143,8 @@ def calculate_contract_totals(contract):
 
         total_gross = 0.0; total_pension_contrib = 0.0; total_health_contrib = 0.0; musicians_processed_count = 0
 
-        # --- Leader Calculation ---
-        app.logger.debug(f" Calculating leader: {contract.leader_name}")
-        leader_is_principal = False # TODO: Determine leader principal status
-        leader_doubling = False; leader_cartage = False; leader_instrument = "" # TODO: Add leader flags/instrument
+        # Leader Calculation
+        leader_is_principal = False; leader_doubling = False; leader_cartage = False; leader_instrument = "" # TODO: Leader flags
         leader_perf_pay, leader_reh_pay, leader_ot_pay, leader_doubling_pay, leader_cartage_pay = 0.0, 0.0, 0.0, 0.0, 0.0
         if has_perf:
             leader_perf_pay = base_perf_rate;
@@ -157,12 +165,11 @@ def calculate_contract_totals(contract):
         if leader_gross > 0: total_gross += leader_gross; total_pension_contrib += leader_gross * pension_rate; musicians_processed_count += 1; app.logger.debug(f"  Leader added totals. Running Gross: {total_gross:.2f}")
         else: app.logger.debug("  Leader Gross is 0.")
 
-        # --- Side Musician Calculations ---
+        # Side Musician Calculations
         side_musicians = contract.side_musicians.order_by(SideMusician.id).all()
         app.logger.debug(f"Calculating for {len(side_musicians)} side musicians...")
         for musician in side_musicians:
-            app.logger.debug(f"  Musician: {musician.name} (ID: {musician.id}), Inst: {musician.instrument}, Dbl: {musician.is_doubling}, Crt: {musician.has_cartage}");
-            musician_is_principal = is_principal(musician.instrument, scale_config) # Pass scale_config
+            app.logger.debug(f"  Musician: {musician.name} (ID: {musician.id}), Inst: {musician.instrument}, Dbl: {musician.is_doubling}, Crt: {musician.has_cartage}"); musician_is_principal = is_principal(musician.instrument, scale_config) # Pass scale_config
             if musician_is_principal: app.logger.debug(f"    Musician {musician.id} IS Principal")
             perf_pay, reh_pay, ot_pay, doubling_pay, cartage_pay = 0.0, 0.0, 0.0, 0.0, 0.0
             if has_perf:
@@ -194,11 +201,10 @@ def calculate_contract_totals(contract):
         return contract
     except Exception as e:
         app.logger.error(f"CALCULATION ERROR contract {contract.id}: {e}", exc_info=True)
-        contract.total_gross_comp = 0.0; contract.total_work_dues = 0.0 # Reset on error
-        contract.total_pension = 0.0; contract.total_health = 0.0
-        return contract # Return original object with zeroed totals
+        contract.total_gross_comp = 0.0; contract.total_work_dues = 0.0; contract.total_pension = 0.0; contract.total_health = 0.0
+        return contract
 
-# --- Routes (Continued) ---
+# --- Routes ---
 @app.route('/')
 @login_required
 def dashboard():
@@ -241,96 +247,84 @@ def logout():
     return redirect(url_for('login'))
 
 # --- Contract Creation/Editing Steps ---
-@app.route('/contract/new', methods=['GET'])
+
+# >>>>> CORRECTED new_contract ROUTE with explicit endpoint name <<<<<
+@app.route('/contract/new', methods=['GET'], endpoint='new_contract_route') # Explicit endpoint
 @login_required
 def new_contract():
+    """Starts a new contract draft."""
     try: new_draft = Contract(user_id=current_user.id, status='draft'); db.session.add(new_draft); db.session.commit(); flash('New draft started.', 'info'); app.logger.info(f"User {current_user.email} started draft {new_draft.id}"); return redirect(url_for('create_contract_step', contract_id=new_draft.id, step_num=1))
     except Exception as e: db.session.rollback(); flash('Failed start new draft.', 'danger'); app.logger.error(f"Error new draft {current_user.email}: {e}", exc_info=True); return redirect(url_for('dashboard'))
+# >>>>> END new_contract ROUTE <<<<<
+
 
 @app.route('/contract/create/<int:contract_id>/step/<int:step_num>', methods=['GET', 'POST'])
 @login_required
 def create_contract_step(contract_id, step_num):
+    """Handles the multi-step contract form (editing drafts)."""
     try: contract = db.session.get(Contract, contract_id);
     except Exception as e: app.logger.error(f"Error fetching contract {contract_id}: {e}", exc_info=True); flash('Error loading contract.', 'danger'); return redirect(url_for('dashboard'))
     if not contract or contract.user_id != current_user.id: flash('Contract not found/permission denied.', 'danger'); app.logger.warning(f"User {current_user.email} invalid access: contract {contract_id}"); return redirect(url_for('dashboard'))
 
     if contract.status == 'completed' and request.method == 'POST': flash('Completed contract. Reopen to edit.', 'warning'); return redirect(url_for('view_contract', contract_id=contract.id))
 
-    if request.method == 'POST':
-        is_saving_draft = 'save_draft' in request.form
-        try:
-            if step_num == 1: # Step 1 Processing
-                contract.engagement_date = parse_date_safe(request.form.get('engagement_date')); contract.leader_name = request.form.get('leader_name', '').strip()
-                contract.leader_card_no = request.form.get('leader_card_no', '').strip(); contract.leader_ssn_ein = request.form.get('leader_ssn_ein', '').strip()
-                contract.leader_address = request.form.get('leader_address', '').strip(); contract.leader_phone = request.form.get('leader_phone', '').strip()
-                contract.band_name = request.form.get('band_name', '').strip(); contract.venue_name = request.form.get('venue_name', '').strip()
-                contract.location_borough = request.form.get('location_borough'); contract.engagement_type = request.form.get('engagement_type', '').strip()
-                contract.start_time = parse_time_safe(request.form.get('start_time')); contract.end_time = parse_time_safe(request.form.get('end_time'))
-                contract.pre_heat_hours = parse_float_safe(request.form.get('pre_heat_hours'))
-                # TODO: Add input field for selecting applicable_local and applicable_scale
-                # contract.applicable_local = request.form.get('applicable_local', 'Local802')
-                # contract.applicable_scale = request.form.get('applicable_scale', 'ClassicalConcert_23_24')
-                errors = []; # Validation
-                if not contract.engagement_date: errors.append("Date required.")
-                if not contract.leader_name: errors.append("Leader name required.") # etc...
-                if errors:
-                    for error in errors: flash(error, 'danger')
-                    return render_template(f'create_contract_step{step_num}.html', contract=contract, step_num=step_num)
-                contract = calculate_contract_totals(contract); db.session.commit() # Calc & Commit
-                if is_saving_draft: flash('Draft saved.', 'success'); app.logger.info(f"Contract {contract_id} Step 1 draft saved by {current_user.email}"); return redirect(url_for('dashboard'))
-                flash('Step 1 saved.', 'success'); app.logger.info(f"Contract {contract_id} Step 1 saved, proceed step 2 by {current_user.email}"); return redirect(url_for('create_contract_step', contract_id=contract_id, step_num=2))
+    form = None
+    if step_num == 1: form = ContractStep1Form(request.form if request.method == 'POST' else None, obj=contract)
+    elif step_num == 2: form = ContractStep2Form(request.form if request.method == 'POST' else None, obj=contract)
+    else: flash(f"Invalid step number: {step_num}", "danger"); return redirect(url_for('dashboard'))
 
-            elif step_num == 2: # Step 2 Processing
-                try: contract.num_musicians = max(1, int(request.form.get('num_musicians', 1)))
-                except ValueError: contract.num_musicians = 1; flash("Invalid musician count.", "warning")
-                contract.has_rehearsal = 'has_rehearsal' in request.form; contract.actual_hours_engagement = parse_float_safe(request.form.get('actual_hours_engagement'))
-                contract.is_recorded = 'is_recorded' in request.form; contract.leader_is_incorporated = 'leader_is_incorporated' in request.form
-                errors = []; # Validation
-                if contract.actual_hours_engagement is None or contract.actual_hours_engagement <= 0: errors.append("Valid engagement hours required.")
-                if contract.has_rehearsal:
-                    contract.actual_hours_rehearsal = parse_float_safe(request.form.get('actual_hours_rehearsal'))
-                    if contract.actual_hours_rehearsal is None or contract.actual_hours_rehearsal <= 0: errors.append("Valid rehearsal hours required if checked.")
-                else: contract.actual_hours_rehearsal = None
-                # Process Side Musicians
-                SideMusician.query.filter_by(contract_id=contract.id).delete() # Delete old
-                new_side_musicians = []
-                for i in range(contract.num_musicians - 1):
-                    prefix = f"musician-{i}-"; name = request.form.get(prefix + "name", "").strip(); tax_id_value = request.form.get(prefix + "tax_id", "").strip() # Use tax_id
+    if form.validate_on_submit():
+        is_saving_draft = form.save_draft.data if hasattr(form, 'save_draft') else False
+        try:
+            form.populate_obj(contract) # Populate main fields from WTForm
+
+            if step_num == 1:
+                contract = calculate_contract_totals(contract); db.session.commit()
+                if is_saving_draft: flash('Draft saved.', 'success'); return redirect(url_for('dashboard'))
+                flash('Step 1 saved.', 'success'); return redirect(url_for('create_contract_step', contract_id=contract_id, step_num=2))
+
+            elif step_num == 2:
+                errors = []; SideMusician.query.filter_by(contract_id=contract.id).delete(); new_side_musicians = []
+                num_musicians_from_form = form.num_musicians.data or 1
+                for i in range(num_musicians_from_form - 1):
+                    prefix = f"musician-{i}-"; name = request.form.get(prefix + "name", "").strip(); tax_id_value = request.form.get(prefix + "tax_id", "").strip()
                     card_no = request.form.get(prefix + "card_no", "").strip(); instrument = request.form.get(prefix + "instrument", "").strip()
                     is_doubling = prefix + "is_doubling" in request.form; has_cartage = prefix + "has_cartage" in request.form
                     m_num = i + 1
                     if not name: errors.append(f"Name required for Side Musician #{m_num}.")
-                    if not tax_id_value: errors.append(f"Tax ID required for Side Musician #{m_num} ({name or 'Unnamed'}).") # Use tax_id
-                    if not errors: new_side_musicians.append(SideMusician(contract_id=contract.id, name=name, tax_id=tax_id_value, card_no=card_no, instrument=instrument, is_doubling=is_doubling, has_cartage=has_cartage)) # Use tax_id
-                    else: app.logger.warning(f"Validation error side musician #{m_num} on contract {contract.id}")
+                    # Tax ID optional per previous change
+                    if not errors: new_side_musicians.append(SideMusician(contract_id=contract.id, name=name, tax_id=tax_id_value or None, card_no=card_no, instrument=instrument, is_doubling=is_doubling, has_cartage=has_cartage))
+                    else: app.logger.warning(f"Validation error prevented add for side musician #{m_num}")
 
-                if errors:
+                if errors: # Re-render form with errors
                     for error in errors: flash(error, 'danger')
-                    app.logger.warning(f"Validation errors saving Step 2 for contract {contract.id}")
-                    musicians_data_on_error = [{'name': request.form.get(f"musician-{i}-name",''), 'tax_id': request.form.get(f"musician-{i}-tax_id",''), 'card_no': request.form.get(f"musician-{i}-card_no",''), 'instrument': request.form.get(f"musician-{i}-instrument",''), 'is_doubling': f"musician-{i}-is_doubling" in request.form, 'has_cartage': f"musician-{i}-has_cartage" in request.form} for i in range(contract.num_musicians - 1)] # Use tax_id
-                    return render_template(f'create_contract_step{step_num}.html', contract=contract, step_num=step_num, musicians_json=musicians_data_on_error)
+                    musicians_data_on_error = [{'name': request.form.get(f"musician-{i}-name",''), 'tax_id': request.form.get(f"musician-{i}-tax_id",''), 'card_no': request.form.get(f"musician-{i}-card_no",''), 'instrument': request.form.get(f"musician-{i}-instrument",''), 'is_doubling': f"musician-{i}-is_doubling" in request.form, 'has_cartage': f"musician-{i}-has_cartage" in request.form} for i in range(num_musicians_from_form - 1)]
+                    return render_template(f'create_contract_step{step_num}.html', contract=contract, step_num=step_num, form=form, musicians_json=musicians_data_on_error)
 
-                db.session.add_all(new_side_musicians); # Add valid musicians
-                contract = calculate_contract_totals(contract) # Recalculate AFTER saving musicians
-                db.session.commit() # Commit changes including side musicians and calculated totals
+                db.session.add_all(new_side_musicians);
+                contract = calculate_contract_totals(contract); db.session.commit()
+                if is_saving_draft: flash('Draft saved.', 'success'); return redirect(url_for('dashboard'))
+                flash('Step 2 data saved.', 'success'); return redirect(url_for('view_contract', contract_id=contract.id))
 
-                if is_saving_draft: flash('Draft saved.', 'success'); app.logger.info(f"Contract {contract_id} Step 2 draft saved by {current_user.email}"); return redirect(url_for('dashboard'))
-                flash('Step 2 data saved.', 'success'); app.logger.info(f"Contract {contract_id} Step 2 saved by {current_user.email}, redirecting view."); return redirect(url_for('view_contract', contract_id=contract.id))
+            else: flash(f"Invalid step POST: {step_num}", "danger"); return redirect(url_for('dashboard'))
 
-            else: flash(f"Invalid step: {step_num}", "danger"); app.logger.error(f"Invalid step POST {step_num} for contract {contract_id}"); return redirect(url_for('dashboard'))
-        except Exception as e: db.session.rollback(); flash(f'Unexpected error saving step {step_num}.', 'danger'); app.logger.error(f"Error saving contract {contract_id} step {step_num} for {current_user.email}: {e}", exc_info=True); return render_template(f'create_contract_step{step_num}.html', contract=contract, step_num=step_num)
+        except Exception as e: db.session.rollback(); flash(f'Error saving step {step_num}.', 'danger'); app.logger.error(f"Error save POST step {step_num} for {contract_id}: {e}", exc_info=True)
+        # Fall through to render template with WTForm errors if exception occurred after validation
 
-    # --- Handle GET request ---
+    # --- Handle GET request OR WTForms POST validation failure ---
     template_name = f'create_contract_step{step_num}.html'; template_path = os.path.join(app.template_folder, template_name)
     if not os.path.exists(template_path): flash(f"Form step {step_num} not found.", "danger"); app.logger.error(f"Template not found: {template_path}"); return redirect(url_for('dashboard') if step_num > 1 else url_for('create_contract_step', contract_id=contract.id, step_num=1))
     musicians_data = []
-    if step_num == 2:
+    # Fetch existing musicians ONLY for Step 2 GET for pre-population
+    if step_num == 2 and request.method == 'GET':
         try:
             musicians = contract.side_musicians.order_by(SideMusician.id).all()
-            for m in musicians: musicians_data.append({'name': m.name, 'tax_id': m.tax_id, 'card_no': m.card_no, 'instrument': m.instrument, 'is_doubling': m.is_doubling, 'has_cartage': m.has_cartage}) # Use tax_id
-            app.logger.debug(f"Passing {len(musicians_data)} existing musicians for contract {contract_id}")
+            for m in musicians: musicians_data.append({'name': m.name, 'tax_id': m.tax_id, 'card_no': m.card_no, 'instrument': m.instrument, 'is_doubling': m.is_doubling, 'has_cartage': m.has_cartage})
+            app.logger.debug(f"Passing {len(musicians_data)} existing musicians on GET for contract {contract_id}")
         except Exception as e: app.logger.error(f"Error fetching musicians for contract {contract_id} on GET: {e}", exc_info=True); flash("Could not load musician data.", "warning")
-    return render_template(template_name, contract=contract, step_num=step_num, musicians_json=musicians_data)
+
+    # Pass form object (contains data/errors if POST failed validation)
+    return render_template(template_name, contract=contract, step_num=step_num, form=form, musicians_json=musicians_data)
 
 
 @app.route('/contract/view/<int:contract_id>')
@@ -371,17 +365,35 @@ def finalize_contract(contract_id):
         contract = db.session.get(Contract, contract_id)
         if not contract or contract.user_id != current_user.id: flash('Cannot finalize: Not found/permission denied.', 'danger'); app.logger.warning(f"User {current_user.email} failed finalize: {contract_id}"); return redirect(url_for('dashboard'))
         if contract.status != 'draft': flash('Only draft contracts can be finalized.', 'warning'); return redirect(url_for('view_contract', contract_id=contract_id))
-
-        # Optional: Recalculate here as a final safety check?
-        # contract = calculate_contract_totals(contract)
-        # app.logger.info(f"Final check calculation run for contract {contract_id}")
-
-        contract.status = 'completed'; db.session.commit() # Commit final status
+        # Final check calculation (optional, but good practice)
+        contract = calculate_contract_totals(contract)
+        app.logger.info(f"Final check calculation run for contract {contract_id}")
+        contract.status = 'completed'; db.session.commit()
         flash(f"Contract successfully finalized!", 'success'); app.logger.info(f"User {current_user.email} finalized contract {contract_id}")
-        return redirect(url_for('view_contract', contract_id=contract.id)) # Show finalized view
-
+        return redirect(url_for('view_contract', contract_id=contract.id))
     except Exception as e: db.session.rollback(); flash('Error finalizing contract.', 'danger'); app.logger.error(f"Error finalizing contract {contract_id} for {current_user.email}: {e}", exc_info=True)
-    return redirect(url_for('view_contract', contract_id=contract_id)) # Redirect back to view
+    return redirect(url_for('view_contract', contract_id=contract_id))
+
+
+# --- PDF Generation Route (UNCOMMENTED) ---
+@app.route('/contract/pdf/<int:contract_id>')
+@login_required
+def download_contract_pdf(contract_id):
+    """Generates a PDF version of the contract."""
+    try:
+        contract = db.session.get(Contract, contract_id)
+        if not contract or contract.user_id != current_user.id: flash('Contract not found or access denied.', 'danger'); return redirect(url_for('dashboard'))
+        musicians = contract.side_musicians.order_by(SideMusician.id).all()
+        scale_config = app.config.get('SCALES', {}).get(contract.applicable_local, {}).get(contract.applicable_scale)
+        pension_rate_config = scale_config.get('PENSION_RATE', 0.0) if scale_config else 0.0
+        html = render_template('contract_pdf.html', contract=contract, musicians=musicians, pension_rate_percent=pension_rate_config * 100)
+        html_obj = HTML(string=html, base_url=request.base_url); pdf = html_obj.write_pdf()
+        response = make_response(pdf); response.headers['Content-Type'] = 'application/pdf'
+        filename = f"AFM802_Contract_{contract.id}_{contract.engagement_date or 'nodate'}.pdf"
+        response.headers['Content-Disposition'] = f'inline; filename="{filename}"'
+        app.logger.info(f"User {current_user.email} generated PDF for contract {contract_id}"); return response
+    except NameError as ne: app.logger.error(f"PDF Gen Error - Missing Import: {ne}", exc_info=True); flash('PDF generation library not available.', 'danger'); return redirect(url_for('view_contract', contract_id=contract_id))
+    except Exception as e: app.logger.error(f"Error generating PDF for {contract_id}: {e}", exc_info=True); flash('Error generating PDF.', 'danger'); return redirect(url_for('view_contract', contract_id=contract_id))
 
 
 # --- Error Handlers ---
@@ -404,14 +416,14 @@ def initialize_database():
         instance_path = app.instance_path; db_uri = app.config['SQLALCHEMY_DATABASE_URI']; is_sqlite = db_uri.startswith('sqlite:')
         app.logger.info(f"DB Init. URI: {db_uri}")
         if is_sqlite:
-            db_file_path = db_uri.split('sqlite:///')[-1]
+            db_file_path = db_uri.split('sqlite:///')[-1];
             if not os.path.isabs(db_file_path): db_file_path = os.path.join(instance_path, db_file_path)
             db_dir = os.path.dirname(db_file_path)
             if not os.path.exists(db_dir):
                  try: os.makedirs(db_dir); app.logger.info(f"Created DB directory: {db_dir}")
                  except OSError as e: app.logger.critical(f"CRITICAL: Failed create DB dir {db_dir}: {e}"); return
         try: app.logger.info("Calling db.create_all()"); db.create_all(); app.logger.info("db.create_all() finished.")
-        except Exception as e: app.logger.critical(f"CRITICAL: DB creation failed: {e}", exc_info=True) # raise e
+        except Exception as e: app.logger.critical(f"CRITICAL: DB creation failed: {e}", exc_info=True)
 
 with app.app_context():
     initialize_database()
@@ -419,7 +431,7 @@ with app.app_context():
 # --- Main Execution Block ---
 if __name__ == '__main__':
     host = os.environ.get('FLASK_RUN_HOST', '0.0.0.0')
-    try: port = int(os.environ.get('FLASK_RUN_PORT', '5000'))
-    except ValueError: port = 5000; app.logger.warning(f"Invalid FLASK_RUN_PORT, using {port}")
+    try: port = int(os.environ.get('FLASK_RUN_PORT', '5001')) # Default to 5001
+    except ValueError: port = 5001; app.logger.warning(f"Invalid FLASK_RUN_PORT, using {port}")
     use_debugger = app.config.get('DEBUG', False)
     app.run(host=host, port=port, debug=use_debugger)

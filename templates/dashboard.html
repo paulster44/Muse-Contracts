@@ -6,7 +6,10 @@
   {# Page Header Row #}
   <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
     <h2 class="mb-0">Your Contracts Dashboard</h2>
-    <a href="{{ url_for('new_contract') }}" class="btn btn-success">
+    {# This is the link causing the BuildError if 'new_contract' endpoint isn't found #}
+    {# --- TEMPORARY FIX: Hardcode the URL --- #}
+       <a href="/contract/new" class="btn btn-success"> {# Changed href from url_for #}
+       {# --- END TEMPORARY FIX ---#}
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle-fill me-1" viewBox="0 0 16 16">
         <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8.5 4.5a.5.5 0 0 0-1 0v3h-3a.5.5 0 0 0 0 1h3v3a.5.5 0 0 0 1 0v-3h3a.5.5 0 0 0 0-1h-3z"/>
       </svg>
@@ -34,7 +37,7 @@
             <tr>
               {# Display contract data, providing fallbacks if data is missing #}
               <td>{{ contract.engagement_date.strftime('%Y-%m-%d') if contract.engagement_date else 'N/A' }}</td>
-              <td>{{ contract.leader_name or contract.band_name or 'N/A' }}</td> {# This was line 60 - ensure it's clean #}
+              <td>{{ contract.leader_name or contract.band_name or 'N/A' }}</td> {# Corrected potential error location #}
               <td>{{ contract.venue_name or 'N/A' }}</td>
               <td>
                   {# Use different Bootstrap badge colors based on status #}
@@ -52,6 +55,11 @@
                 {# --- View Button (Always show) --- #}
                 <a href="{{ url_for('view_contract', contract_id=contract.id) }}" class="btn btn-sm btn-outline-info me-1" title="View Details">
                     View
+                </a>
+
+                {# --- PDF Button (Now enabled for local) --- #}
+                <a href="{{ url_for('download_contract_pdf', contract_id=contract.id) }}" class="btn btn-sm btn-outline-secondary me-1" target="_blank" title="Generate PDF">
+                    PDF
                 </a>
 
                 {# --- Edit / Reopen / Finalize Buttons (Conditional on status) --- #}

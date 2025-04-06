@@ -2,217 +2,225 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Contract {{ contract.id }}</title>
+    <title>Contract {{ contract.id }} - AFM Local 802</title>
     <style>
-        /* Basic Styling for PDF - Adjust as needed for layout */
+        /* General PDF Styling */
         @page {
-            size: letter; /* Standard paper size */
-            margin: 0.75in;
+            size: letter;
+            margin: 0.5in 0.75in; /* Slightly reduced margins */
         }
         body {
-            font-family: sans-serif;
-            font-size: 10pt;
-            line-height: 1.4;
+            font-family: Arial, Helvetica, sans-serif; /* Common sans-serif */
+            font-size: 9pt; /* Smaller base font */
+            line-height: 1.3;
         }
-        h2, h3 {
-            text-align: center;
-            margin-bottom: 5px;
-            margin-top: 0;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        td, th {
+            padding: 2px 4px; /* Reduced padding */
+            vertical-align: top;
+            border: 1px solid #666; /* Default border for structure */
+        }
+        th {
+            background-color: #eee;
             font-weight: bold;
+            text-align: center;
         }
-        h3 { font-size: 11pt; }
-        .header-info {
-             border: 1px solid #ccc;
-             padding: 5px;
-             margin-bottom: 15px;
-             font-size: 9pt;
+        .no-border td, .no-border {
+             border: none !important; /* Helper to remove borders */
+             padding: 1px;
         }
-        .header-info table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .header-info td {
-            padding: 2px 5px;
-            vertical-align: top;
-        }
-        .label { font-weight: bold; padding-right: 5px; }
-        .content-block { margin-bottom: 10px; }
-        .musician-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 8pt;
-            margin-top: 15px;
-            margin-bottom: 15px;
-            border: 1px solid #555;
-        }
-        .musician-table th, .musician-table td {
-            border: 1px solid #ccc;
-            padding: 3px 5px;
-            text-align: left;
-            vertical-align: top;
-        }
-        .musician-table th { background-color: #eee; font-weight: bold; }
-        .totals-table {
-             width: 60%;
-             margin-left: 40%; /* Push totals right */
-             border-collapse: collapse;
-             font-size: 9pt;
-             margin-top: 10px;
-             border: 1px solid #555;
-        }
-        .totals-table td {
-             border: 1px solid #ccc;
-             padding: 3px 5px;
-        }
-        .signature-section { margin-top: 30px; }
-        .signature-box {
-             display: inline-block; /* Basic side-by-side attempt */
-             width: 45%;
-             margin-top: 20px;
-             padding-top: 40px; /* Space for signature */
-             border-top: 1px solid #000;
-        }
-         .signature-box .label { display: block; } /* Ensure labels are block */
-         .signature-box.left { margin-right: 5%; }
+        .center { text-align: center; }
+        .right { text-align: right; }
+        .label { font-weight: bold; }
+        .underline { min-width: 100px; display: inline-block; border-bottom: 1px solid #333; } /* For blank spaces */
+        .pii-warning { font-size: 7pt; color: #555; font-style: italic;}
+        .note { font-size: 8pt; font-style: italic; margin: 5px 0; }
 
-        /* Add more specific styles to match the form layout */
+        /* Header Section Specifics */
+        .main-header { text-align: center; margin-bottom: 10px; border: none;}
+        .main-header h2 { font-size: 12pt; margin-bottom: 2px; }
+        .main-header h3 { font-size: 10pt; margin-bottom: 5px; font-weight: normal;}
+
+        .info-table td { font-size: 8pt; height: 25px; } /* Smaller font, fixed height attempt */
+        .info-table .label { font-size: 7pt; display: block; margin-bottom: -2px; } /* Smaller labels above data */
+        .info-table td.loc-select { width: 15%; }
+        .info-table td.type-engage { width: 35%; }
+        .info-table td.num-mus { width: 12%;}
+        .info-table td.time { width: 23%; }
+        .info-table td.hours { width: 15%; }
+
+        /* Musician Roster Table */
+        .musician-table { font-size: 8pt; margin-top: 10px; margin-bottom: 10px; }
+        .musician-table th { font-size: 7pt; padding: 2px; }
+        .musician-table td { height: 20px; } /* Try to give space */
+        .musician-table .col-num { width: 5%; text-align: center;}
+        .musician-table .col-name { width: 25%; }
+        .musician-table .col-taxid { width: 15%; }
+        .musician-table .col-inst { width: 20%; }
+        .musician-table .col-chk { width: 5%; text-align: center;} /* For checkboxes/Yes/No */
+        .musician-table .col-pay { width: 15%; text-align: right;}
+
+        /* Totals Table */
+        .totals-table { width: 50%; margin-left: 50%; margin-top: 5px; font-size: 8pt; }
+        .totals-table td.label { width: 60%; font-weight: bold; border-right: none;}
+        .totals-table td.value { width: 40%; text-align: right; border-left: none;}
+
+        /* Clauses & Signatures */
+        .clauses { font-size: 7pt; margin-top: 15px; text-align: justify; }
+        .signature-section { margin-top: 25px; width: 100%; }
+        .sig-block { width: 48%; display: inline-block; vertical-align: top; } /* Use inline-block */
+        .sig-block.left { margin-right: 3%; }
+        .sig-line { border-bottom: 1px solid black; height: 20px; margin: 20px 0 5px 0; }
+        .sig-label { font-size: 8pt; }
 
     </style>
 </head>
 <body>
-    <h2>SINGLE ENGAGEMENT COLLECTIVE BARGAINING AGREEMENT</h2>
-    <h3>Associated Musicians of Greater New York - Local 802, A.F. of M.</h3>
-    {# Add address/phone if needed #}
-
-    <div class="header-info">
-        <table>
-            <tr>
-                <td><span class="label">ENGAGEMENT DATE:</span> {{ contract.engagement_date.strftime('%Y-%m-%d') if contract.engagement_date else '' }}</td>
-                <td><span class="label">LEADER/EMPLOYER NAME:</span> {{ contract.leader_name or '' }}</td>
-                <td><span class="label">CARD NO:</span> {{ contract.leader_card_no or '' }}</td>
-            </tr>
-             <tr>
-                 <td colspan="2"><span class="label">LEADER/EMPLOYER ADDRESS:</span> {{ contract.leader_address or '' }}</td>
-                 <td><span class="label">LEADER SSN/EIN:</span> {{ contract.leader_ssn_ein or '' }}</td> {# PII! #}
-            </tr>
-            <tr>
-                 <td colspan="2"><span class="label">NAME OF BAND/GROUP:</span> {{ contract.band_name or 'N/A' }}</td>
-                 <td><span class="label">PHONE:</span> {{ contract.leader_phone or '' }}</td>
-            </tr>
-            <tr>
-                 <td colspan="3"><span class="label">PLACE OF ENGAGEMENT (VENUE/ROOM):</span> {{ contract.venue_name or '' }}</td>
-            </tr>
-            <tr>
-                 <td><span class="label">LOCATION:</span> {{ contract.location_borough or '' }}</td>
-                 <td><span class="label">TYPE OF ENGAGEMENT:</span> {{ contract.engagement_type or '' }}</td>
-                 <td><span class="label">NO. OF MUSICIANS:</span> {{ contract.num_musicians or '' }}</td>
-            </tr>
-            <tr>
-                 <td>
-                    <span class="label">TIME:</span>
-                    From: {{ contract.start_time.strftime('%I:%M %p') if contract.start_time else '__:__'}}
-                    To: {{ contract.end_time.strftime('%I:%M %p') if contract.end_time else '__:__'}}
-                 </td>
-                 <td>
-                     <span class="label">HOURS:</span> {{ contract.actual_hours_engagement or 'N/A' }}
-                     {% if contract.pre_heat_hours %} (Pre: {{ contract.pre_heat_hours }}h){% endif %}
-                 </td>
-                 <td>
-                    <span class="label">REHEARSAL:</span> {% if contract.has_rehearsal %} Yes ({{ contract.actual_hours_rehearsal or 'N/A' }} hrs) {% else %} No {% endif %}
-                 </td>
-            </tr>
-        </table>
+    <div class="main-header">
+        <h2>SINGLE ENGAGEMENT COLLECTIVE BARGAINING AGREEMENT</h2>
+        <h3>Associated Musicians of Greater New York - Local 802, A.F. of M.</h3>
+        {# 322 West 48th St., New York, NY 10036 (212) 245-4802 #}
     </div>
 
+    <table class="info-table">
+        <tr>
+            <td style="width: 20%;"><span class="label">ENGAGEMENT DATE</span>{{ contract.engagement_date.strftime('%Y-%m-%d') if contract.engagement_date else '' }}</td>
+            <td style="width: 45%;"><span class="label">LEADER/EMPLOYER NAME</span>{{ contract.leader_name or '' }}</td>
+            <td style="width: 15%;"><span class="label">CARD NO.</span>{{ contract.leader_card_no or '' }}</td>
+            <td style="width: 20%;"><span class="label">LEADER TAX ID</span><span class="underline"></span></td> {# Leave Blank #}
+        </tr>
+         <tr>
+             <td colspan="3"><span class="label">LEADER/EMPLOYER ADDRESS</span>{{ contract.leader_address or '' }}</td>
+             <td><span class="label">PHONE</span>{{ contract.leader_phone or '' }}</td>
+        </tr>
+        <tr>
+             <td colspan="2"><span class="label">NAME OF BAND/GROUP</span>{{ contract.band_name or 'N/A' }}</td>
+             <td colspan="2"><span class="label">PLACE OF ENGAGEMENT (VENUE/ROOM)</span>{{ contract.venue_name or '' }}</td>
+        </tr>
+        {# Simulating Checkboxes - More complex layout needed for exact match #}
+        <tr>
+             <td class="loc-select"><span class="label">LOCATION</span>{{ contract.location_borough or '' }}</td>
+             <td class="type-engage"><span class="label">TYPE OF ENGAGEMENT</span>{{ contract.engagement_type or '' }}</td>
+             <td class="num-mus"><span class="label">NO. OF MUS.</span>{{ contract.num_musicians or '' }}</td>
+             <td class="time"><span class="label">TIME</span>From: {{ contract.start_time.strftime('%I:%M%p') if contract.start_time else '__:__'}} To: {{ contract.end_time.strftime('%I:%M%p') if contract.end_time else '__:__'}}</td>
+             <td class="hours"><span class="label">HOURS</span>{{ contract.actual_hours_engagement or '__' }}</td>
+        </tr>
+        <tr>
+             <td colspan="3"> </td> {# Spacing #}
+             <td><span class="label">REHEARSAL</span>{% if contract.has_rehearsal %} Yes ({{ contract.actual_hours_rehearsal or 'N/A' }} hrs) {% else %} No {% endif %}</td>
+             <td><span class="label">PRE-HEAT</span>{{ contract.pre_heat_hours if contract.pre_heat_hours is not none else 'N/A' }}</td>
+        </tr>
+    </table>
+
     {# --- Musician Roster --- #}
-    <p style="text-align:center; font-size: 9pt; margin: 5px 0;">(Musician Details & Signatures would appear here in a full implementation - This is simplified)</p>
     <table class="musician-table">
         <thead>
             <tr>
-                <th>#</th>
-                <th>PRINT NAME</th>
-                <th>SOC. SEC. #</th> {# PII! #}
-                <th>INSTRUMENT</th>
-                <th>DBL</th>
-                <th>CART</th>
-                <th>Gross Scale Comp.</th>
-                {# Add other columns like Pension/Health/Dues per musician if needed #}
+                <th class="col-num">#</th>
+                <th class="col-name">PRINT NAME</th>
+                <th class="col-taxid">SOC. SEC. / TAX ID #</th> {# PII! #}
+                {# Add other checkbox columns if needed #}
+                <th class="col-inst">INSTRUMENT</th>
+                <th class="col-chk">DBL</th>
+                <th class="col-chk">CART</th>
+                <th class="col-pay">Gross Scale Comp.</th>
             </tr>
         </thead>
         <tbody>
-            {# Leader Row (Simplified) #}
+            {# Leader Row #}
             <tr>
                 <td>1 (L)</td>
                 <td>{{ contract.leader_name or '' }}</td>
-                <td>{{ contract.leader_ssn_ein or '' }}</td> {# PII! #}
-                <td>(Leader Inst.)</td> {# TODO: Add leader instrument field #}
-                <td>No</td> {# TODO: Add leader doubling flag #}
-                <td>No</td> {# TODO: Add leader cartage flag #}
-                <td>${{ "%.2f"|format( (contract.total_gross_comp or 0) / (contract.num_musicians or 1) ) }}</td> {# Rough estimate #}
+                <td><span class="underline"></span></td> {# Leave Blank #}
+                <td>(Leader Inst.?)</td> {# Placeholder #}
+                <td>No</td> {# Placeholder #}
+                <td>No</td> {# Placeholder #}
+                {# Estimate Leader Pay - More accurate if stored per musician #}
+                <td>${{ "%.2f"|format( (contract.total_gross_comp or 0) / (contract.num_musicians or 1) ) }}</td>
             </tr>
             {# Side Musician Rows #}
             {% for musician in musicians %}
             <tr>
                 <td>{{ loop.index + 1 }}</td>
                 <td>{{ musician.name or '' }}</td>
-                <td>{% if musician.ssn and musician.ssn|length >= 4 %}***-**-{{ musician.ssn[-4:] }}{% else %}N/A{% endif %}</td>
+                <td><span class="underline"></span></td> {# Leave Blank #}
                 <td>{{ musician.instrument or '' }}</td>
                 <td>{{ 'Yes' if musician.is_doubling else 'No' }}</td>
                 <td>{{ 'Yes' if musician.has_cartage else 'No' }}</td>
-                <td>${{ "%.2f"|format( (contract.total_gross_comp or 0) / (contract.num_musicians or 1) ) }}</td> {# Rough estimate #}
+                {# Estimate Side Musician Pay - More accurate if stored per musician #}
+                 <td>${{ "%.2f"|format( (contract.total_gross_comp or 0) / (contract.num_musicians or 1) ) }}</td>
             </tr>
+            {% else %}
+            {# Add blank rows if needed to fill space? Or just leave empty #}
+             <tr><td> </td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+             <tr><td> </td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+             {# ... add more blank rows as needed ... #}
             {% endfor %}
         </tbody>
     </table>
 
-    {# --- Totals Summary --- #}
+     {# --- Totals Section --- #}
      <table class="totals-table">
          <tr>
              <td class="label">TOTAL GROSS SCALE COMP.</td>
-             <td>${{ "%.2f"|format(contract.total_gross_comp or 0.00) }}</td>
+             <td class="value">${{ "%.2f"|format(contract.total_gross_comp or 0.00) }}</td>
          </tr>
           <tr>
              <td class="label">3.5% WORK DUES</td>
-             <td>${{ "%.2f"|format(contract.total_work_dues or 0.00) }}</td>
+             <td class="value">${{ "%.2f"|format(contract.total_work_dues or 0.00) }}</td>
          </tr>
           <tr>
-             <td class="label">PENSION (AFM-EPF)</td>
-             <td>${{ "%.2f"|format(contract.total_pension or 0.00) }}</td>
-         </tr>
-          <tr>
-             <td class="label">HEALTH (HBP)</td>
-             <td>${{ "%.2f"|format(contract.total_health or 0.00) }}</td>
-         </tr>
+              <td class="label">PENSION (AFM-EPF) ({{ "%.2f"|format(pension_rate_percent or 0) }}%)</td>
+                           {# --- END MODIFICATION --- #}
+                           <td class="value">${{ "%.2f"|format(contract.total_pension or 0.00) }}</td>
+                       </tr>
+                        <tr>
+                           <td class="label">HEALTH (HBP)</td>
+                           <td class="value">${{ "%.2f"|format(contract.total_health or 0.00) }}</td>
+                       </tr>
+                   </table>
+     <table class="no-border" style="margin-top: 1px; width: 50%; margin-left: 50%;">
+        <tr>
+            <td style="font-size: 7pt;">PAY AMOUNTS AS INSTRUCTED ---></td>
+            <td class="center" style="font-size: 7pt; border: 1px solid #666;">REMIT TO LOCAL 802</td>
+            <td class="center" style="font-size: 7pt; border: 1px solid #666;">REMIT TO AFM-EPF</td>
+            <td class="center" style="font-size: 7pt; border: 1px solid #666;">REMIT TO HBP</td>
+        </tr>
      </table>
 
 
-    {# --- Clauses (Add relevant clauses here as static text or conditional) --- #}
-    <div class="content-block" style="font-size: 8pt; margin-top: 20px;">
-        <p><strong>STANDARD CLAUSES (Abbreviated):</strong> Employer employs musicians and agrees to abide by Union bylaws regarding compensation, working conditions, pension, and health benefits. No performance shall be recorded without specific written agreement. AFM/Union rules are adhered to. Musicians may cease service due to strikes/unfair lists. Union representatives have access. Employees must be members in good standing (subject to LMRA). Disputes handled via grievance/arbitration. Pension/Health contributions payable to AFM-EPF/HBP Trusts as per Trust Agreements (incorporated by reference). Contributions due within 30 days via check/money order with remittance form. Employer provides necessary info and permits audits. Leader cannot make contributions unless incorporated. (Full text available).</p>
+    {# --- Clauses --- #}
+    <div class="clauses">
+        <p>1. Employer employs musicians within jurisdiction of Local 802, American Federation of Musicians ("Union") and agrees to abide by Union's bylaws regarding compensation, working conditions, pension and health benefits. 2. Upon request, employer shall make advance payment or post bond. 3. No performance shall be recorded, reproduced or transmitted without specific written agreement with Union/AFM. 4. Parties adhere to AFM/Union Constitution, Bylaws, Rules, Regulations. 5. Musicians free to cease service for strike, ban, unfair list without penalty. 6. Union representatives have access to performance place (except private residence). 7. Employees must be Union members in good standing per applicable law. 8. Disputes discussed; if unresolved, submitted to Union board; if still unresolved, submitted to AAA arbitration (costs shared equally), decision final and binding. 9. Employer accepts terms of AFM-EPF and Local 802 HBP Trust Agreements (incorporated by reference). 10. Pension/Health contributions paid via check/money order to AFM-EPF/HBP respectively, remitted via Union within required timeframe with documentation. Failure to comply subjects employer to liability for contributions and collection costs. Employer permits audits. Leader cannot make contributions unless incorporated and provides proof thereof. This statement is accurate and executed by authorized representative.</p>
         {% if contract.is_recorded %}
         <p><strong>RECORDING NOTE:</strong> Performance recording was indicated. A separate written agreement with the Union/AFM is required.</p>
         {% endif %}
+         {# Add other specific conditions from Appendix A if necessary #}
     </div>
 
     {# --- Signatures --- #}
     <div class="signature-section">
-        <div class="signature-box left">
+        <div class="sig-block left">
             FOR THE LOCAL 802:
-            <br><br>
-             <span class="label">BY:</span> _________________________
-             <br>
-             <span class="label">TITLE:</span> _________________________
-             <br>
-             <span class="label">DATE:</span> _________________________
+            <div class="sig-line"></div>
+            <span class="sig-label">BY (SIGNATURE)</span>
+            <div class="sig-line"></div>
+            <span class="sig-label">TITLE</span>
+            <div class="sig-line"></div>
+            <span class="sig-label">DATE</span>
         </div>
-        <div class="signature-box right">
+        <div class="sig-block"> {# Right block #}
              FOR THE LEADER/EMPLOYER:
-             <br><br>
-             <span class="label">BY:</span> _________________________
-              <br>
-             <span class="label">TITLE:</span> _________________________
-              <br>
-             <span class="label">DATE:</span> _________________________
+             <div class="sig-line"></div>
+             <span class="sig-label">BY (SIGNATURE)</span>
+             <div class="sig-line"></div>
+             <span class="sig-label">TITLE</span>
+             <div class="sig-line"></div>
+             <span class="sig-label">DATE</span>
         </div>
     </div>
 

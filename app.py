@@ -3,7 +3,7 @@ import os
 import datetime
 import logging
 import math
-from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response # Added make_response
+from flask import Flask, jsonify, render_template, request, redirect, url_for, flash, session, make_response # Added make_response
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_bcrypt import Bcrypt
@@ -396,9 +396,232 @@ def download_contract_pdf(contract_id):
     except Exception as e: app.logger.error(f"Error generating PDF for {contract_id}: {e}", exc_info=True); flash('Error generating PDF.', 'danger'); return redirect(url_for('view_contract', contract_id=contract_id))
 
 
+# --- API Routes ---
+def contract_to_dict(contract):
+    """Converts a Contract object to a dictionary for JSON serialization."""
+    return {
+        'id': contract.id,
+        'user_id': contract.user_id,
+        'status': contract.status,
+        'applicable_local': contract.applicable_local,
+        'applicable_scale': contract.applicable_scale,
+        'engagement_date': contract.engagement_date.isoformat() if contract.engagement_date else None,
+        'leader_name': contract.leader_name,
+        'leader_card_no': contract.leader_card_no,
+        'leader_ssn_ein': contract.leader_ssn_ein,
+        'leader_address': contract.leader_address,
+        'leader_phone': contract.leader_phone,
+        'band_name': contract.band_name,
+        'venue_name': contract.venue_name,
+        'location_borough': contract.location_borough,
+        'engagement_type': contract.engagement_type,
+        'num_musicians': contract.num_musicians,
+        'start_time': contract.start_time.isoformat() if contract.start_time else None,
+        'end_time': contract.end_time.isoformat() if contract.end_time else None,
+        'has_rehearsal': contract.has_rehearsal,
+        'pre_heat_hours': contract.pre_heat_hours,
+        'actual_hours_engagement': contract.actual_hours_engagement,
+        'actual_hours_rehearsal': contract.actual_hours_rehearsal,
+        'is_recorded': contract.is_recorded,
+        'leader_is_incorporated': contract.leader_is_incorporated,
+        'total_gross_comp': contract.total_gross_comp,
+        'total_work_dues': contract.total_work_dues,
+        'total_pension': contract.total_pension,
+        'total_health': contract.total_health,
+        'created_at': contract.created_at.isoformat() if contract.created_at else None,
+        'last_saved_at': contract.last_saved_at.isoformat() if contract.last_saved_at else None,
+        'side_musicians': [
+            {
+                'id': sm.id,
+                'name': sm.name,
+                'card_no': sm.card_no,
+                'tax_id': sm.tax_id,
+                'instrument': sm.instrument,
+                'is_doubling': sm.is_doubling,
+                'has_cartage': sm.has_cartage,
+            } for sm in contract.side_musicians
+        ]
+    }
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    password = data.get('password')
+    if not email or not password:
+        return jsonify({'message': 'Email and password are required.'}), 400
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        return jsonify({'message': 'Invalid email format.'}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({'message': 'Email already registered.'}), 409
+    try:
+        new_user = User(email=email)
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+        login_user(new_user)
+        app.logger.info(f"New user registered via API: {email}")
+        return jsonify({'message': 'Registration successful!', 'user': {'id': new_user.id, 'email': new_user.email}}), 201
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"API registration error: {e}", exc_info=True)
+        return jsonify({'message': 'Registration failed due to a server error.'}), 500
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    password = data.get('password')
+    if not email or not password:
+        return jsonify({'message': 'Email and password are required.'}), 400
+    user = User.query.filter_by(email=email).first()
+    if user and user.check_password(password):
+        login_user(user, remember=True)
+        app.logger.info(f"User logged in via API: {email}")
+        return jsonify({'message': 'Login successful!', 'user': {'id': user.id, 'email': user.email}}), 200
+    else:
+        app.logger.warning(f"Failed API login attempt for: {email}")
+        return jsonify({'message': 'Invalid credentials.'}), 401
+
+@app.route('/api/logout', methods=['POST'])
+@login_required
+def api_logout():
+    app.logger.info(f"User logged out via API: {current_user.email}")
+    logout_user()
+    return jsonify({'message': 'Logout successful.'}), 200
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    if current_user.is_authenticated:
+        return jsonify({'logged_in': True, 'user': {'id': current_user.id, 'email': current_user.email}}), 200
+    else:
+        return jsonify({'logged_in': False}), 200
+
+
+@app.route('/api/contracts', methods=['GET'])
+@login_required
+def api_get_contracts():
+    try:
+        user_contracts = Contract.query.filter_by(user_id=current_user.id).order_by(Contract.last_saved_at.desc()).all()
+        return jsonify([contract_to_dict(c) for c in user_contracts]), 200
+    except Exception as e:
+        app.logger.error(f"API get contracts error for user {current_user.email}: {e}", exc_info=True)
+        return jsonify({'message': 'Could not retrieve contracts.'}), 500
+
+@app.route('/api/contracts', methods=['POST'])
+@login_required
+def api_create_contract():
+    try:
+        new_draft = Contract(user_id=current_user.id, status='draft')
+        db.session.add(new_draft)
+        db.session.commit()
+        app.logger.info(f"User {current_user.email} created new draft {new_draft.id} via API")
+        return jsonify(contract_to_dict(new_draft)), 201
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"API create contract error for {current_user.email}: {e}", exc_info=True)
+        return jsonify({'message': 'Failed to create new draft.'}), 500
+
+@app.route('/api/contracts/<int:contract_id>', methods=['GET'])
+@login_required
+def api_get_contract(contract_id):
+    try:
+        contract = db.session.get(Contract, contract_id)
+        if not contract or contract.user_id != current_user.id:
+            return jsonify({'message': 'Contract not found or permission denied.'}), 404
+        return jsonify(contract_to_dict(contract)), 200
+    except Exception as e:
+        app.logger.error(f"API get contract {contract_id} error for user {current_user.email}: {e}", exc_info=True)
+        return jsonify({'message': 'Could not retrieve contract.'}), 500
+
+@app.route('/api/contracts/<int:contract_id>', methods=['PUT'])
+@login_required
+def api_update_contract(contract_id):
+    try:
+        contract = db.session.get(Contract, contract_id)
+        if not contract or contract.user_id != current_user.id:
+            return jsonify({'message': 'Contract not found or permission denied.'}), 404
+        if contract.status == 'completed':
+            return jsonify({'message': 'Completed contracts cannot be edited. Please reopen it first.'}), 403
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'message': 'No input data provided.'}), 400
+
+        # Simple field updates
+        for field in ['leader_name', 'leader_card_no', 'leader_ssn_ein', 'leader_address', 'leader_phone', 'band_name', 'venue_name', 'location_borough', 'engagement_type', 'status']:
+            if field in data:
+                setattr(contract, field, data[field])
+
+        # Type-sensitive field updates
+        for field, parser in [('engagement_date', parse_date_safe), ('start_time', parse_time_safe), ('end_time', parse_time_safe)]:
+             if field in data:
+                setattr(contract, field, parser(data[field]))
+
+        for field, parser in [('pre_heat_hours', parse_float_safe), ('actual_hours_engagement', parse_float_safe), ('actual_hours_rehearsal', parse_float_safe)]:
+             if field in data:
+                setattr(contract, field, parser(data[field]))
+
+        for field in ['has_rehearsal', 'is_recorded', 'leader_is_incorporated']:
+            if field in data:
+                setattr(contract, field, bool(data[field]))
+
+        # Side Musicians update
+        if 'side_musicians' in data and isinstance(data['side_musicians'], list):
+            # This is a full replacement of side musicians for simplicity
+            SideMusician.query.filter_by(contract_id=contract.id).delete()
+            new_side_musicians = []
+            for sm_data in data['side_musicians']:
+                new_sm = SideMusician(
+                    contract_id=contract.id,
+                    name=sm_data.get('name'),
+                    instrument=sm_data.get('instrument'),
+                    tax_id=sm_data.get('tax_id'),
+                    card_no=sm_data.get('card_no'),
+                    is_doubling=bool(sm_data.get('is_doubling', False)),
+                    has_cartage=bool(sm_data.get('has_cartage', False))
+                )
+                if not new_sm.name:
+                     return jsonify({'message': f'Side musician name is required. Invalid data: {sm_data}'}), 400
+                new_side_musicians.append(new_sm)
+            db.session.add_all(new_side_musicians)
+
+
+        # Recalculate totals after updates
+        contract = calculate_contract_totals(contract)
+        db.session.commit()
+        app.logger.info(f"User {current_user.email} updated contract {contract_id} via API")
+        return jsonify(contract_to_dict(contract)), 200
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"API update contract {contract_id} error for {current_user.email}: {e}", exc_info=True)
+        return jsonify({'message': 'Failed to update contract.'}), 500
+
+@app.route('/api/contracts/<int:contract_id>', methods=['DELETE'])
+@login_required
+def api_delete_contract(contract_id):
+    try:
+        contract = db.session.get(Contract, contract_id)
+        if not contract or contract.user_id != current_user.id:
+            return jsonify({'message': 'Contract not found or permission denied.'}), 404
+
+        db.session.delete(contract)
+        db.session.commit()
+        app.logger.info(f"User {current_user.email} deleted contract {contract_id} via API")
+        return jsonify({'message': f'Contract {contract_id} deleted successfully.'}), 200
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"API delete contract {contract_id} error for {current_user.email}: {e}", exc_info=True)
+        return jsonify({'message': 'Failed to delete contract.'}), 500
+
 # --- Error Handlers ---
 @app.errorhandler(404)
-def page_not_found(e): app.logger.warning(f"404: {request.url} - {e}"); return render_template('404.html'), 404 if os.path.exists(os.path.join(app.template_folder, '404.html')) else ("<h1>404</h1>", 404)
+def page_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify(message="Resource not found."), 404
+    app.logger.warning(f"404: {request.url} - {e}");
+    return render_template('404.html'), 404 if os.path.exists(os.path.join(app.template_folder, '404.html')) else ("<h1>404</h1>", 404)
 @app.errorhandler(500)
 def internal_server_error(e):
     try: db.session.rollback()
